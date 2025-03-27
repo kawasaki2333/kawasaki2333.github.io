@@ -278,24 +278,98 @@
                 });
                 
                 currentXHR.onreadystatechange = function() {
-                    if (currentXHR.readyState === XMLHttpRequest.DONE) {
-                        if (currentXHR.status === 200) {
-                            try {
-                                const response = JSON.parse(currentXHR.responseText);
-                                statusText.textContent = '上传成功!';
-                                progressBar.style.backgroundColor = '#2ecc71';
-                                showSuccess(`${selectedFiles.length} 个文件上传成功`);
-                                
-                                // 3秒后重置
-                                setTimeout(resetUploader, 3000);
-                            } catch (e) {
-                                showError('解析服务器响应失败');
-                            }
-                        } else {
-                            handleUploadError(`服务器错误: ${currentXHR.status}`);
-                        }
-                    }
-                };
+    // 确保请求已完成
+    if (currentXHR.readyState !== XMLHttpRequest.DONE) return;
+    
+    // 清除当前上传引用
+    const xhr = currentXHR;
+    currentXHR = null;
+    
+    try {
+        // 处理HTTP状态码
+        if (xhr.status === 0) {
+            throw new Error('网络连接失败，请检查网络设置');
+        }
+        
+        if (xhr.status === 200) {
+            handleSuccessfulUpload(xhr);
+        } else {
+            handleHttpError(xhr);
+        }
+    } catch (error) {
+        handleUploadError(error.message || '上传处理过程中发生未知错误');
+    }
+};
+
+// 处理成功上传
+function handleSuccessfulUpload(xhr) {
+    let response;
+    try {
+        response = JSON.parse(xhr.responseText);
+        
+        // 验证服务器响应结构
+        if (!response.success && !response.files) {
+            throw new Error('服务器返回了无效的响应格式');
+        }
+        
+        statusText.textContent = '上传成功!';
+        progressBar.style.backgroundColor = '#2ecc71';
+        
+        // 显示更详细的上传结果
+        const successMsg = response.files 
+            ? `成功上传 ${response.files.length} 个文件`
+            : `${selectedFiles.length} 个文件上传成功`;
+        
+        showSuccess(successMsg);
+        
+        // 如果有服务器返回的文件信息，可以显示更多细节
+        if (response.files) {
+            console.log('上传的文件详情:', response.files);
+        }
+        
+    } catch (e) {
+        // 特殊处理JSON解析错误
+        if (e instanceof SyntaxError) {
+            throw new Error('服务器返回了无效的JSON数据');
+        }
+        throw e;
+    } finally {
+        // 无论成功与否，3秒后重置上传器
+        setTimeout(resetUploader, 3000);
+    }
+}
+
+// 处理HTTP错误状态
+function handleHttpError(xhr) {
+    let errorMessage = `服务器错误: ${xhr.status}`;
+    
+    // 为常见HTTP状态码提供更友好的错误信息
+    const errorMessages = {
+        400: '请求格式不正确',
+        401: '未授权，请检查登录信息',
+        403: '没有权限执行此操作',
+        404: '上传接口不存在',
+        413: '文件大小超过服务器限制',
+        500: '服务器内部错误',
+        503: '服务不可用'
+    };
+    
+    if (errorMessages[xhr.status]) {
+        errorMessage = errorMessages[xhr.status];
+    }
+    
+    // 尝试解析服务器可能返回的错误详情
+    try {
+        const errorResponse = JSON.parse(xhr.responseText);
+        if (errorResponse.error) {
+            errorMessage += ` - ${errorResponse.error}`;
+        }
+    } catch (e) {
+        // 忽略JSON解析失败
+    }
+    
+    throw new Error(errorMessage);
+}
                 
                 currentXHR.addEventListener('error', function() {
                     handleUploadError('网络错误，上传失败');
