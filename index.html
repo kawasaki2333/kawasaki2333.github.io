@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>远程文件上传</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], 
+        input[type="password"],
+        input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #fafafa;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #3498db;
+            background-color: #e8f4fc;
+        }
+        #file-input {
+            display: none;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .btn:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-bar {
+            height: 10px;
+            background-color: #ecf0f1;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress {
+            height: 100%;
+            background-color: #2ecc71;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .status {
+            text-align: center;
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        .file-info {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .error {
+            color: #e74c3c;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>远程文件上传</h1>
+        
+        <div class="form-group">
+            <label for="192.168.6.161:3000">服务器地址</label>
+            <input type="url" id="server-url" placeholder="https://example.com/upload" value="">
+        </div>
+        
+        <div class="form-group">
+            <label for="admin">用户名 (可选)</label>
+            <input type="text" id="username" placeholder="请输入用户名">
+        </div>
+        
+        <div class="form-group">
+            <label for="password123">密码 (可选)</label>
+            <input type="password" id="password" placeholder="请输入密码">
+        </div>
+        
+        <div class="upload-area" id="upload-area">
+            <h3>点击选择文件或拖放到此处</h3>
+            <p>支持单个或多个文件上传</p>
+            <input type="file" id="file-input" multiple>
+        </div>
+        
+        <div id="file-list" class="file-info"></div>
+        
+        <button id="upload-btn" class="btn" disabled>开始上传</button>
+        
+        <div class="progress-container" id="progress-container">
+            <div class="progress-bar">
+                <div class="progress" id="progress-bar"></div>
+            </div>
+            <div class="status" id="status-text">准备上传...</div>
+        </div>
+        
+        <div id="error-message" class="error"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('upload-area');
+            const fileInput = document.getElementById('file-input');
+            const uploadBtn = document.getElementById('upload-btn');
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const statusText = document.getElementById('status-text');
+            const fileList = document.getElementById('file-list');
+            const errorMsg = document.getElementById('error-message');
+            const serverUrlInput = document.getElementById('server-url');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            
+            let selectedFiles = [];
+            let currentXHR = null;
+
+            // 点击上传区域
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            // 拖放功能
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#3498db';
+                uploadArea.style.backgroundColor = '#e8f4fc';
+            });
+
+            ['dragleave', 'dragend'].forEach(type => {
+                uploadArea.addEventListener(type, function() {
+                    uploadArea.style.borderColor = '#ccc';
+                    uploadArea.style.backgroundColor = '#fafafa';
+                });
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ccc';
+                uploadArea.style.backgroundColor = '#fafafa';
+                handleFiles(e.dataTransfer.files);
+            });
+
+            // 文件选择处理
+            fileInput.addEventListener('change', function() {
+                handleFiles(this.files);
+            });
+
+            // 处理选择的文件
+            function handleFiles(files) {
+                if (!files || files.length === 0) return;
+                
+                selectedFiles = Array.from(files);
+                uploadBtn.disabled = false;
+                errorMsg.textContent = '';
+                
+                // 显示文件信息
+                let fileInfo = `已选择 ${files.length} 个文件:<br>`;
+                selectedFiles.forEach((file, index) => {
+                    fileInfo += `${index + 1}. ${file.name} (${formatFileSize(file.size)})<br>`;
+                });
+                
+                fileList.innerHTML = fileInfo;
+                progressContainer.style.display = 'block';
+                statusText.textContent = '准备上传...';
+            }
+
+            // 格式化文件大小
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const units = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+            }
+
+            // 上传按钮点击
+            uploadBtn.addEventListener('click', function() {
+                if (selectedFiles.length === 0) {
+                    showError('请先选择文件');
+                    return;
+                }
+                
+                const serverUrl = serverUrlInput.value.trim();
+                if (!serverUrl) {
+                    showError('请输入服务器地址');
+                    return;
+                }
+                
+                uploadFiles(serverUrl);
+            });
+
+            // 上传文件到远程服务器
+            function uploadFiles(serverUrl) {
+                uploadBtn.disabled = true;
+                statusText.textContent = '正在上传...';
+                
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('files', file);
+                });
+                
+                // 添加认证信息
+                const username = usernameInput.value.trim();
+                const password = passwordInput.value.trim();
+                if (username) formData.append('username', username);
+                if (password) formData.append('password', password);
+                
+                currentXHR = new XMLHttpRequest();
+                
+                // 进度更新
+                currentXHR.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        progressBar.style.width = percent + '%';
+                        statusText.textContent = `上传中: ${percent}%`;
+                        
+                        // 更新页面标题显示进度
+                        document.title = `上传中 ${percent}% - 远程文件上传`;
+                    }
+                });
+                
+                currentXHR.onreadystatechange = function() {
+                    if (currentXHR.readyState === XMLHttpRequest.DONE) {
+                        if (currentXHR.status === 200) {
+                            try {
+                                const response = JSON.parse(currentXHR.responseText);
+                                statusText.textContent = '上传成功!';
+                                progressBar.style.backgroundColor = '#2ecc71';
+                                showSuccess(`${selectedFiles.length} 个文件上传成功`);
+                                
+                                // 3秒后重置
+                                setTimeout(resetUploader, 3000);
+                            } catch (e) {
+                                showError('解析服务器响应失败');
+                            }
+                        } else {
+                            handleUploadError(`服务器错误: ${currentXHR.status}`);
+                        }
+                    }
+                };
+                
+                currentXHR.addEventListener('error', function() {
+                    handleUploadError('网络错误，上传失败');
+                });
+                
+                currentXHR.addEventListener('abort', function() {
+                    statusText.textContent = '上传已取消';
+                });
+                
+                currentXHR.open('POST', serverUrl);
+                
+                // 设置超时时间 (30秒)
+                currentXHR.timeout = 30000;
+                currentXHR.ontimeout = function() {
+                    handleUploadError('请求超时，请检查网络连接');
+                };
+                
+                currentXHR.send(formData);
+            }
+            
+            // 显示错误信息
+            function showError(message) {
+                errorMsg.textContent = message;
+                errorMsg.style.display = 'block';
+            }
+            
+            // 显示成功信息
+            function showSuccess(message) {
+                errorMsg.textContent = message;
+                errorMsg.style.color = '#2ecc71';
+                errorMsg.style.display = 'block';
+            }
+            
+            // 处理上传错误
+            function handleUploadError(message) {
+                statusText.textContent = message;
+                progressBar.style.backgroundColor = '#e74c3c';
+                uploadBtn.disabled = false;
+                showError(message);
+                document.title = '上传失败 - 远程文件上传';
+            }
+            
+            // 重置上传状态
+            function resetUploader() {
+                selectedFiles = [];
+                fileInput.value = '';
+                fileList.innerHTML = '';
+                uploadBtn.disabled = true;
+                progressBar.style.width = '0%';
+                progressBar.style.backgroundColor = '#2ecc71';
+                document.title = '远程文件上传';
+            }
+            
+            // 监听页面可见性变化
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible' && currentXHR) {
+                    // 页面重新可见时更新进度
+                    if (currentXHR.upload) {
+                        const percent = currentXHR.upload.loaded / currentXHR.upload.total * 100 || 0;
+                        progressBar.style.width = percent + '%';
+                        statusText.textContent = `上传中: ${Math.round(percent)}%`;
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
