@@ -280,7 +280,7 @@
             actionButtons.style.display = 'none';
             
             currentXHR = new XMLHttpRequest();
-            currentXHR.open('POST', 'http://47.109.53.97:8080/upload', true);
+            currentXHR.open('POST', 'http://192.168.6.161:8080/upload', true);
             currentXHR.setRequestHeader('Authorization', `Basic ${btoa('admin:password123')}`);
             
             currentXHR.upload.onprogress = function(e) {
